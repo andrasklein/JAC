@@ -214,6 +214,26 @@ def h_implicit_function_or_int(match, ctx):
     return "implicit function/int error -> " + ", ".join(changed) if changed else None
 
 
+def h_incompatible_pointer_types(match, ctx):
+    # gcc 14+ (and clang) promoted these from warnings to hard errors by
+    # default. Extremely common in older exploits: a callback (clone(),
+    # pthread_create(), signal(), qsort(), ...) declared with an empty/
+    # old-style parameter list, e.g. 'static int child() {' instead of
+    # 'static int child(void *arg) {'. Pre-gcc14 this compiled fine as a
+    # warning, so demoting it back to a warning reproduces that behavior
+    # without touching the source.
+    key = "incompatible_pointer_types"
+    if key in ctx.state.flag_fix_applied:
+        return None
+    ctx.state.flag_fix_applied.add(key)
+    changed = []
+    if add_flag(ctx.state, "-Wno-incompatible-pointer-types"):
+        changed.append("-Wno-incompatible-pointer-types")
+    if add_flag(ctx.state, "-Wno-int-conversion"):
+        changed.append("-Wno-int-conversion")
+    return "incompatible pointer type error -> " + ", ".join(changed) if changed else None
+
+
 def h_c99_for_loop(match, ctx):
     key = "c99_for_loop"
     if key in ctx.state.flag_fix_applied:
@@ -255,6 +275,10 @@ ERROR_RULES = [
     (
         re.compile(r"implicit declaration of function|type defaults to .int.|return type defaults to .int.|-Wimplicit-int"),
         h_implicit_function_or_int,
+    ),
+    (
+        re.compile(r"\[-Wincompatible-pointer-types\]|\[-Wincompatible-function-pointer-types\]|\[-Wint-conversion\]"),
+        h_incompatible_pointer_types,
     ),
     (
         re.compile(r".for.\s*loop initial declarations are only allowed in C99"),
